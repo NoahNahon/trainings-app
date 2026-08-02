@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dev-dist/
+.DS_Store
+
+# Nichts Lokales oder Geheimes versehentlich mit `git add -A` einsammeln
+.env
+.env.*
+.claude/
+*.local

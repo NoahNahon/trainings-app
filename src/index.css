@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+@layer base {
+  html {
+    background: #0b1120;
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased;
+    /* iOS: keep content clear of the home indicator / notch */
+    padding-top: env(safe-area-inset-top);
+    overscroll-behavior-y: none;
+  }
+
+  /* Number inputs in the workout logger: no spinners, they are thumb-hostile */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  /* Tap targets shouldn't flash blue on iOS */
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@utility field {
+  @apply w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100
+    placeholder:text-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500
+    focus:outline-none;
+}
+
+@utility card {
+  @apply rounded-2xl border border-slate-800 bg-slate-900/60;
+}

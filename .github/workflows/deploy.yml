@@ -1,0 +1,52 @@
+name: Deploy auf GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Erlaubt manuelles Auslösen über den Actions-Tab
+  workflow_dispatch:
+
+# Ein Deploy gleichzeitig; laufende Deploys nicht abbrechen
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Der Build braucht keine Pages-Rechte – die hat nur der deploy-Job.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Typecheck läuft mit, damit ein kaputter Build nicht live geht
+      - run: npm run build
+
+      # Kein actions/configure-pages hier: die Action fragt die Pages-API ab und
+      # scheitert mit 404, solange Pages im Repo noch nicht auf "GitHub Actions"
+      # steht. Ihre Outputs (base_path/base_url) braucht dieser Build nicht, weil
+      # vite.config.ts mit base: './' arbeitet und damit unterpfad-unabhängig ist.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
