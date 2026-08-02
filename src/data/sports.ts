@@ -15,6 +15,13 @@ export interface SportMeta {
   metrics: MetricKey[]
   /** Bouldern logs individual problems instead of only sets. */
   sends?: boolean
+  /**
+   * Session length that never varies, in minutes.
+   *
+   * Set for the yoga class: it's always 60, so the duration is filled in
+   * automatically and the field is left out of the form entirely.
+   */
+  fixedDurationMin?: number
 }
 
 /**
@@ -69,11 +76,14 @@ export const SPORTS: SportMeta[] = [
   },
   {
     id: 'yoga',
+    // Fixed 60-minute class: nothing to measure, so there are no metric fields
+    // and the single "exercise" is a checkbox.
     name: 'Yin Yoga',
     role: 'Erholungstag – fixer Kurs',
     color: 'slate',
     weekdays: [4],
-    metrics: ['durationMin'],
+    metrics: [],
+    fixedDurationMin: 60,
   },
 ]
 

@@ -10,7 +10,10 @@ export const DATA_VERSION = 2
 export function seedData(): AppData {
   return {
     version: DATA_VERSION,
-    plans: structuredClone(seedPlans),
+    // `userEdited: false` is written explicitly rather than left undefined:
+    // "known untouched" and "don't know" must stay distinguishable, because only
+    // the first allows overwriting on update. See normalize().
+    plans: structuredClone(seedPlans).map((p) => ({ ...p, userEdited: false })),
     activePlanId: seedPlans[0].id,
     sessions: [],
     recipes: structuredClone(seedRecipes),
@@ -43,7 +46,17 @@ export function normalize(parsed: Partial<AppData>): AppData {
     // Seed order defines the order of the sport picker.
     ...fresh.plans.map((seed) => {
       const own = storedById.get(seed.id)
-      return own ? { ...own, sport: own.sport ?? seed.sport } : seed
+      if (!own) return seed
+      // Refresh only a plan that is *known* to be untouched, so corrections to
+      // the built-in plans (a wrong unit, a better exercise) reach an installed
+      // app instead of being frozen in localStorage forever.
+      //
+      // `userEdited === undefined` means the payload predates the flag, and an
+      // edit back then left no trace. Treated as edited on purpose: silently
+      // overwriting someone's reworked plan is far worse than carrying an
+      // outdated one, which they can still fix by hand.
+      if (own.userEdited === false) return seed
+      return { ...own, sport: own.sport ?? seed.sport }
     }),
     // Anything the user created themselves keeps existing, appended at the end.
     ...stored

@@ -1,4 +1,5 @@
 import type { Block, Exercise, Plan, SetMetric } from '../types'
+import { zone2Range } from './profile.ts'
 
 const HC = 'https://hybridcalisthenics.com'
 
@@ -330,7 +331,11 @@ export const laufen: Plan = {
     ]),
   ],
   notes: [
-    { id: 'lf-n1', label: 'Zone 2 ohne Zahlen', text: 'Der Sprechtest ist verlässlicher als eine Formel. Zone-2-Grenzen aus 220 minus Alter sind grobe Schätzungen – wenn du deinen Maximalpuls kennst oder die Uhr Zonen anzeigt, nimm die' },
+    {
+      id: 'lf-n1',
+      label: 'Zone 2 in Zahlen',
+      text: `Bei 26 Jahren ergibt die Schätzung 220 − Alter einen Maximalpuls von ${zone2Range().hrMax}, Zone 2 liegt bei 60–70 % davon: ca. ${zone2Range().from}–${zone2Range().to} bpm. Die Formel streut individuell um ±10–12 bpm, ist also ein Anhaltspunkt und kein Messwert. Widersprechen sich Zahl und Sprechtest, gilt der Sprechtest – und die Zonen deiner Apple Watch schlagen beides`,
+    },
     { id: 'lf-n2', label: 'Werte eintragen', text: 'Distanz, Zeit und Ø-Puls nach dem Lauf von der Apple Watch ablesen und im Training-Tab eintragen. Die App kann Apple Health nicht auslesen – Websites haben keinen Zugriff darauf' },
     { id: 'lf-n3', label: 'Langsam ist der Sinn', text: 'Zone 2 wirkt über Dauer, nicht Intensität. Der Reiz sitzt in der Grundlagenausdauer – schneller laufen macht die Einheit schlechter, nicht besser' },
     { id: 'lf-n4', label: 'Danach Sauna', text: 'Der Plan kombiniert Sonntag mit Sauna als Wochenabschluss. Vorher trinken, die Sauna kostet noch mal 0,5–1 L' },
@@ -394,9 +399,11 @@ export const yoga: Plan = {
   subtitle: 'Do 11 Uhr · Fixer Kurs · Erholungstag nach dem Haupttag Mi',
   weekdays: [4],
   blocks: [
-    block('yo-class', 'Kurs', 'ca. 60–75 Min.', 'slate', [
-      ex('yo-session', 'Yin Yoga Kurs', 1, '60–75 Min.', null, 'Fixer Termin donnerstags 11 Uhr. Passiv halten, nicht in die Dehnung arbeiten', {
-        metric: 'minutes',
+    block('yo-class', 'Kurs', '60 Min.', 'slate', [
+      // Nur abhaken: die Kurslänge ist immer 60 Min., ein Zahlenfeld waere eine
+      // Frage, deren Antwort schon feststeht.
+      ex('yo-session', 'Kurs besucht', 1, '60 Min.', null, 'Fixer Termin donnerstags 11 Uhr. Passiv halten, nicht in die Dehnung arbeiten', {
+        metric: 'check',
       }),
     ]),
   ],

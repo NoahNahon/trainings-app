@@ -11,7 +11,7 @@ export type Sport = 'calisthenics' | 'bouldern' | 'schwimmen' | 'laufen' | 'saun
  * their unit from `hold`. Use `setMetric()` in lib/util rather than reading
  * this field directly, so both shapes stay supported.
  */
-export type SetMetric = 'reps' | 'seconds' | 'meters' | 'minutes'
+export type SetMetric = 'reps' | 'seconds' | 'meters' | 'minutes' | 'check'
 
 export interface Exercise {
   id: string
@@ -58,6 +58,15 @@ export interface Plan {
   notes: PlanNote[]
   /** Optional so v1 payloads load; the store fills it in on migration. */
   sport?: Sport
+  /**
+   * Set the first time the user changes anything about this plan.
+   *
+   * Decides who wins on update: an edited plan is never overwritten, an
+   * untouched one gets refreshed from the seed so corrections to the built-in
+   * plans actually arrive. Without this, a plan saved once to localStorage would
+   * be frozen forever.
+   */
+  userEdited?: boolean
 }
 
 /** One logged set. `value` is reps, seconds, metres or minutes — see `setMetric()`. */

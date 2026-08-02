@@ -80,6 +80,7 @@ const METRIC_UNITS: Record<SetMetric, string> = {
   seconds: 'Sek.',
   meters: 'm',
   minutes: 'Min.',
+  check: '',
 }
 
 export function metricUnit(metric: SetMetric): string {
@@ -89,6 +90,16 @@ export function metricUnit(metric: SetMetric): string {
 /** Only holds and timed efforts drive the countdown; metres and reps don't. */
 export function metricUsesTimer(metric: SetMetric): boolean {
   return metric === 'seconds'
+}
+
+/**
+ * Whether a set has a number worth typing at all.
+ *
+ * A fixed-length yoga class only needs "done" — offering a minutes field there
+ * asks a question whose answer is always 60.
+ */
+export function metricHasValue(metric: SetMetric): boolean {
+  return metric !== 'check'
 }
 
 /** Pace as "5:30 /km". Null when either input is missing or zero. */

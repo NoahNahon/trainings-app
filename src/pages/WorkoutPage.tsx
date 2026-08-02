@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { emptyMetrics, loadDraft, newSession, saveDraft, useStore } from '../store'
-import type { BoulderSend, Exercise, LoggedSet, Session, SessionMetrics } from '../types'
-import { Button, Chip, Empty, Icon, blockStyles } from '../components/ui'
+import type { BoulderSend, Exercise, LoggedSet, Plan, Session, SessionMetrics } from '../types'
+import { Button, Chip, Icon, blockStyles } from '../components/ui'
 import { TimerBar, useCountdown } from '../components/Timer'
 import { BOULDER_LEVELS, METRIC_SPECS, RUN_DISTANCE_SPEC, STROKES, sportMeta, type MetricKey } from '../data/sports'
+import { zone2Range } from '../data/profile'
 import {
   clsx,
   formatDate,
+  formatShortDate,
   holdSeconds,
+  metricHasValue,
   metricUnit,
   metricUsesTimer,
   pacePerKm,
@@ -15,6 +18,7 @@ import {
   setMetric,
   targetMidpoint,
   uid,
+  weekdayName,
 } from '../lib/util'
 
 /**
@@ -26,8 +30,10 @@ function setsOf(session: Session | null, exercise: Exercise): LoggedSet[] {
   if (existing && existing.length === exercise.sets) return existing
   // Seconds take the upper bound of the target; everything else its midpoint —
   // "25 m" and "30–40 Min." both prefill sensibly that way.
-  const prefill =
-    setMetric(exercise) === 'seconds'
+  const metric = setMetric(exercise)
+  const prefill = !metricHasValue(metric)
+    ? '' // Nur-Abhaken: eine Zahl waere hier bedeutungslos.
+    : metric === 'seconds'
       ? String(holdSeconds(exercise.target) ?? '')
       : targetMidpoint(exercise.target)
   return Array.from({ length: exercise.sets }, (_, i) => existing?.[i] ?? { done: false, value: prefill })
@@ -39,46 +45,27 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
     const draft = loadDraft()
     return draft && !draft.finishedAt ? draft : null
   })
+  const [editDate, setEditDate] = useState(false)
   const timer = useCountdown()
 
   useEffect(() => {
     saveDraft(session)
   }, [session])
 
-  const lastSession = useMemo(
-    () => data.sessions.find((s) => s.planId === plan.id && s.finishedAt),
-    [data.sessions, plan.id],
-  )
-
   if (!session) {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold text-slate-50">Training</h1>
-        <div className="card space-y-4 p-5">
-          <div>
-            <p className="text-sm text-slate-300">{plan.name}</p>
-            <p className="mt-1 text-xs text-slate-500">{plan.subtitle}</p>
-          </div>
-          {lastSession && (
-            <p className="text-xs text-slate-500">Letztes Training: {formatDate(lastSession.date)}</p>
-          )}
-          <Button variant="primary" className="w-full" onClick={() => setSession(newSession(plan))}>
-            <Icon name="play" className="h-4 w-4" />
-            Session starten
-          </Button>
-        </div>
-        {data.sessions.length === 0 && (
-          <Empty
-            title="Noch keine Trainings geloggt"
-            hint="Starte eine Session – Sätze abhaken, Wiederholungen eintragen, fertig."
-          />
-        )}
-      </div>
-    )
+    return <SessionStarter onStart={(p) => setSession(newSession(p))} />
   }
 
+  // Resolve the plan from the session, NOT from activePlanId. Since sessions can
+  // now be started for any sport without touching the Plan tab, those two drift
+  // apart routinely — reading the active plan here would log one sport's sets
+  // against another sport's exercises.
+  const sessionPlan = data.plans.find((p) => p.id === session.planId) ?? plan
+
   // A session references exercises by id; the plan is the source of truth for what to show.
-  const trackable = plan.blocks.flatMap((b) => b.exercises.filter((e) => e.sets > 0).map((e) => ({ block: b, e })))
+  const trackable = sessionPlan.blocks.flatMap((b) =>
+    b.exercises.filter((e) => e.sets > 0).map((e) => ({ block: b, e })),
+  )
   const doneSets = trackable.reduce(
     (sum, { e }) => sum + (session.entries[e.id]?.sets.filter((s) => s.done).length ?? 0),
     0,
@@ -86,7 +73,7 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
   const totalSets = trackable.filter(({ e }) => !e.optional).reduce((sum, { e }) => sum + e.sets, 0)
   const pct = totalSets === 0 ? 0 : Math.min(100, Math.round((doneSets / totalSets) * 100))
 
-  const sport = plan.sport ?? 'calisthenics'
+  const sport = sessionPlan.sport ?? 'calisthenics'
   const meta = sportMeta(sport)
   const metrics = session.metrics ?? emptyMetrics()
   const sends = session.sends ?? []
@@ -146,9 +133,28 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
     <div className="space-y-5 pb-24">
       <header className="space-y-3">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-slate-50">{plan.name}</h1>
-            <p className="text-xs text-slate-500">{formatDate(session.date)} · läuft</p>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-bold text-slate-50">{sessionPlan.name}</h1>
+            {editDate ? (
+              <input
+                type="date"
+                className="field mt-1 py-1 text-xs"
+                value={session.date}
+                onChange={(e) =>
+                  setSession((prev) => (prev && e.target.value ? { ...prev, date: e.target.value } : prev))
+                }
+                onBlur={() => setEditDate(false)}
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditDate(true)}
+                className="text-xs text-slate-500 underline decoration-slate-700 underline-offset-2 hover:text-orange-400"
+              >
+                {formatDate(session.date)} · Datum ändern
+              </button>
+            )}
           </div>
           {/* Sätze sind für Bouldern die falsche Einheit — dort zählen Boulder. */}
           {sport === 'bouldern' ? (
@@ -171,7 +177,7 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
       </header>
 
       <div className="space-y-4">
-        {plan.blocks.map((block) => {
+        {sessionPlan.blocks.map((block) => {
           const logged = block.exercises.filter((e) => e.sets > 0)
           const info = block.exercises.filter((e) => e.sets === 0)
           const style = blockStyles[block.color]
@@ -261,6 +267,92 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
   )
 }
 
+/**
+ * Choose what to log, on any day.
+ *
+ * Deliberately independent of whichever plan the Plan tab last selected — being
+ * stuck with that one was a real dead end. Today's plans are sorted to the top
+ * and marked, but nothing is blocked: a session moved to another day, or logged
+ * a day late, is normal and shouldn't need a workaround.
+ */
+function SessionStarter({ onStart }: { onStart: (plan: Plan) => void }) {
+  const { data } = useStore()
+  const today = new Date().getDay()
+
+  const lastByPlan = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const s of data.sessions) {
+      if (s.finishedAt && !map.has(s.planId)) map.set(s.planId, s.date)
+    }
+    return map
+  }, [data.sessions])
+
+  // Stable sort: today's plans first, otherwise the seed order is kept.
+  const plans = useMemo(() => {
+    const scored = data.plans.map((p, i) => ({ p, i, today: p.weekdays.includes(today) }))
+    scored.sort((a, b) => Number(b.today) - Number(a.today) || a.i - b.i)
+    return scored
+  }, [data.plans, today])
+
+  return (
+    <div className="space-y-4">
+      <header>
+        <h1 className="text-2xl font-bold text-slate-50">Training</h1>
+        <p className="mt-1 text-sm text-slate-400">Was möchtest du eintragen?</p>
+      </header>
+
+      <ul className="space-y-2">
+        {plans.map(({ p, today: isToday }) => {
+          const meta = sportMeta(p.sport ?? 'calisthenics')
+          const last = lastByPlan.get(p.id)
+          return (
+            <li key={p.id}>
+              <button
+                type="button"
+                onClick={() => onStart(p)}
+                className={clsx(
+                  'flex w-full items-stretch gap-3 overflow-hidden rounded-2xl border text-left transition-colors',
+                  isToday
+                    ? 'border-orange-500/50 bg-orange-500/5'
+                    : 'border-slate-800 bg-slate-900/60 hover:border-slate-700',
+                )}
+              >
+                <span className={clsx('w-1.5 shrink-0', blockStyles[meta.color].bar)} aria-hidden="true" />
+                <span className="min-w-0 flex-1 py-3 pr-3">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate font-semibold text-slate-100">{meta.name}</span>
+                    {isToday && (
+                      <span className="shrink-0 rounded-full bg-orange-500/20 px-2 py-0.5 text-[11px] font-medium text-orange-300">
+                        heute
+                      </span>
+                    )}
+                  </span>
+                  {/* Nur zeigen, wenn er etwas hinzufuegt – bei "Bouldern / Bouldern" nicht. */}
+                  {p.name !== meta.name && (
+                    <span className="mt-0.5 block truncate text-xs text-slate-400">{p.name}</span>
+                  )}
+                  <span className="mt-1 block text-[11px] text-slate-500">
+                    {p.weekdays.map((d) => weekdayName(d).slice(0, 2)).join(' · ')}
+                    {last ? ` · zuletzt ${formatShortDate(last)}` : ' · noch nichts geloggt'}
+                  </span>
+                </span>
+                <span className="flex items-center pr-3 text-slate-600">
+                  <Icon name="play" className="h-4 w-4" />
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+
+      <p className="text-xs leading-relaxed text-slate-500">
+        Der Wochentag ist nur ein Hinweis – du kannst jede Einheit an jedem Tag eintragen. Das Datum lässt sich in
+        der laufenden Session ändern, falls du etwas nachträgst.
+      </p>
+    </div>
+  )
+}
+
 function ExerciseLogger({
   exercise,
   sets,
@@ -314,19 +406,26 @@ function ExerciseLogger({
             >
               {set.done ? <Icon name="check" className="h-4 w-4" /> : <span className="text-xs font-semibold">{i + 1}</span>}
             </button>
-            <div className="relative flex-1">
-              <input
-                type="number"
-                inputMode="numeric"
-                className="field pr-16 tabular-nums"
-                placeholder={unit}
-                value={set.value}
-                onChange={(e) => onValue(i, e.target.value)}
-              />
-              <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-500">
-                {unit}
+            {metricHasValue(metric) ? (
+              <div className="relative flex-1">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  className="field pr-16 tabular-nums"
+                  placeholder={unit}
+                  value={set.value}
+                  onChange={(e) => onValue(i, e.target.value)}
+                />
+                <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-500">
+                  {unit}
+                </span>
+              </div>
+            ) : (
+              // Nur abhaken: der Haken links ist die ganze Eingabe.
+              <span className="flex-1 text-sm text-slate-400">
+                {set.done ? 'Erledigt' : `Abhaken, wenn erledigt · ${exercise.target}`}
               </span>
-            </div>
+            )}
             {metricUsesTimer(metric) && (
               <Button size="sm" variant="secondary" aria-label="Halte-Timer starten" onClick={onHold}>
                 <Icon name="timer" className="h-4 w-4" />
@@ -474,6 +573,16 @@ function MetricsCard({
           const raw = metrics[key]
           const value = typeof raw === 'number' ? (isRunKm ? raw / 1000 : raw) : null
 
+          // Zone 2 is the whole point of the Sunday run, so the target range
+          // belongs next to the field rather than buried in the plan notes.
+          const zone = zone2Range()
+          const hint =
+            key === 'avgHr' && sport === 'laufen'
+              ? `Zone 2 ca. ${zone.from}–${zone.to} bpm · von der Apple Watch`
+              : spec.hint
+          const outOfZone =
+            key === 'avgHr' && sport === 'laufen' && value != null && (value < zone.from || value > zone.to)
+
           return (
             <label key={key} className="block">
               <span className="mb-1 block text-[11px] text-slate-400">{spec.label}</span>
@@ -483,7 +592,14 @@ function MetricsCard({
                 decimal={spec.kind === 'decimal'}
                 onChange={(n) => onChange({ [key]: isRunKm && n != null ? Math.round(n * 1000) : n })}
               />
-              {spec.hint && <span className="mt-1 block text-[10px] leading-snug text-slate-500">{spec.hint}</span>}
+              {outOfZone ? (
+                <span className="mt-1 block text-[10px] leading-snug text-amber-400">
+                  Außerhalb der geschätzten Zone 2 ({zone.from}–{zone.to}). Die Formel streut ±10–12 bpm – wenn der
+                  Sprechtest gepasst hat, war es in Ordnung.
+                </span>
+              ) : (
+                hint && <span className="mt-1 block text-[10px] leading-snug text-slate-500">{hint}</span>
+              )}
             </label>
           )
         })}

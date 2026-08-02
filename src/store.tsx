@@ -10,6 +10,7 @@ import {
 } from 'react'
 import type { AppData, Block, Exercise, Plan, Recipe, Session } from './types'
 import { emptyMetrics, normalize, seedData } from './lib/migrate'
+import { sportMeta } from './data/sports'
 import { todayKey, uid } from './lib/util'
 
 export { emptyMetrics }
@@ -61,9 +62,17 @@ interface Store {
 
 const StoreContext = createContext<Store | null>(null)
 
-/** Rewrite one plan in place, leaving the rest of the state untouched. */
+/**
+ * Rewrite one plan in place, leaving the rest of the state untouched.
+ *
+ * Every plan edit goes through here, which is why the `userEdited` flag is set
+ * here too — one place instead of a dozen call sites that could forget it.
+ */
 function mapPlan(data: AppData, planId: string, fn: (plan: Plan) => Plan): AppData {
-  return { ...data, plans: data.plans.map((p) => (p.id === planId ? fn(p) : p)) }
+  return {
+    ...data,
+    plans: data.plans.map((p) => (p.id === planId ? { ...fn(p), userEdited: true } : p)),
+  }
 }
 
 function mapBlock(plan: Plan, blockId: string, fn: (block: Block) => Block): Plan {
@@ -324,16 +333,20 @@ export function saveDraft(session: Session | null): void {
 }
 
 export function newSession(plan: Plan): Session {
+  const sport = plan.sport ?? 'calisthenics'
+  const fixed = sportMeta(sport).fixedDurationMin ?? null
   return {
     id: uid('session'),
     planId: plan.id,
     planName: plan.name,
-    sport: plan.sport ?? 'calisthenics',
+    sport,
     date: todayKey(),
     startedAt: new Date().toISOString(),
     entries: {},
     note: '',
-    metrics: emptyMetrics(),
+    // Fixed-length sports (the yoga class) get their duration filled in, so the
+    // history shows it without asking a question that has one answer.
+    metrics: { ...emptyMetrics(), durationMin: fixed },
     sends: [],
   }
 }

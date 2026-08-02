@@ -3,7 +3,17 @@ import { useStore } from '../store'
 import type { Session, Sport } from '../types'
 import { Button, Chip, Empty, Icon, SectionTitle, Sheet, blockStyles } from '../components/ui'
 import { SPORTS, sportMeta } from '../data/sports'
-import { clsx, formatDate, formatShortDate, formatKm, metricUnit, mmss, plural, setMetric } from '../lib/util'
+import {
+  clsx,
+  formatDate,
+  formatShortDate,
+  formatKm,
+  metricHasValue,
+  metricUnit,
+  mmss,
+  plural,
+  setMetric,
+} from '../lib/util'
 import type { SetMetric } from '../types'
 
 const sportOf = (s: Session): Sport => s.sport ?? 'calisthenics'
@@ -14,6 +24,7 @@ const METRIC_TOTALS: Record<SetMetric, string> = {
   seconds: 'Sek. gesamt',
   meters: 'Meter gesamt',
   minutes: 'Min. gesamt',
+  check: 'erledigt',
 }
 
 /** Pace in seconds per kilometre, or null when the inputs don't allow it. */
@@ -55,6 +66,13 @@ function sessionSummary(session: Session): string {
       if (best !== null) parts.push(`bis Level ${best}`)
       const flashes = (session.sends ?? []).filter((s) => s.flash).length
       if (flashes > 0) parts.push(`${flashes}× Flash`)
+      break
+    }
+    case 'yoga': {
+      // Nothing is counted here — the class either happened or it didn't.
+      const attended = Object.values(session.entries).some((e) => e.sets.some((s) => s.done))
+      if (attended) parts.push('erledigt')
+      if (m?.durationMin) parts.push(`${m.durationMin} Min.`)
       break
     }
     default: {
@@ -213,8 +231,10 @@ function SessionDetail({ session, planName }: { session: Session; planName: stri
   const { data } = useStore()
   // Names come from whichever plan the session was logged against.
   const sourcePlan = data.plans.find((p) => p.id === session.planId)
-  const names = new Map(
-    (sourcePlan ?? data.plans[0]).blocks.flatMap((b) => b.exercises.map((e) => [e.id, e.name] as const)),
+  // Keep the whole exercise, not just its name: the unit of a logged value
+  // depends on its metric, and "60" alone is meaningless for a tick-only entry.
+  const exercises = new Map(
+    (sourcePlan ?? data.plans[0]).blocks.flatMap((b) => b.exercises.map((e) => [e.id, e] as const)),
   )
   const entries = Object.entries(session.entries).filter(([, e]) => e.sets.some((s) => s.done))
 
@@ -285,20 +305,26 @@ function SessionDetail({ session, planName }: { session: Session; planName: stri
         ) : null
       ) : (
         <ul className="divide-y divide-slate-800">
-          {entries.map(([id, entry]) => (
-            <li key={id} className="py-2.5">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-sm font-medium text-slate-100">{names.get(id) ?? `Übung (${planName})`}</span>
-                <span className="shrink-0 text-sm tabular-nums text-orange-300">
-                  {entry.sets
-                    .filter((s) => s.done)
-                    .map((s) => s.value || '–')
-                    .join(' · ')}
-                </span>
-              </div>
-              {entry.note && <p className="mt-1 text-xs text-slate-500">{entry.note}</p>}
-            </li>
-          ))}
+          {entries.map(([id, entry]) => {
+            const exercise = exercises.get(id)
+            const metric = exercise ? setMetric(exercise) : 'reps'
+            const done = entry.sets.filter((s) => s.done)
+            return (
+              <li key={id} className="py-2.5">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-sm font-medium text-slate-100">
+                    {exercise?.name ?? `Übung (${planName})`}
+                  </span>
+                  <span className="shrink-0 text-sm tabular-nums text-orange-300">
+                    {metricHasValue(metric)
+                      ? `${done.map((s) => s.value || '–').join(' · ')} ${metricUnit(metric)}`.trim()
+                      : 'erledigt'}
+                  </span>
+                </div>
+                {entry.note && <p className="mt-1 text-xs text-slate-500">{entry.note}</p>}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
@@ -353,7 +379,13 @@ function ProgressList({ sessions }: { sessions: Session[] }) {
   const exercises = useMemo(
     () =>
       data.plans.flatMap((p) =>
-        p.blocks.flatMap((b) => b.exercises.filter((e) => e.sets > 0).map((e) => ({ ...e, planId: p.id }))),
+        p.blocks.flatMap((b) =>
+          b.exercises
+            // Tick-only exercises carry no number, so a "total" for them would
+            // always read 0 — that's noise, not progress.
+            .filter((e) => e.sets > 0 && setMetric(e) !== 'check')
+            .map((e) => ({ ...e, planId: p.id })),
+        ),
       ),
     [data.plans],
   )

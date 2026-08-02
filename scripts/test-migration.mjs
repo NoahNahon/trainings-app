@@ -105,6 +105,44 @@ check('Kaputte sessions werden zu []', Array.isArray(bogus.sessions) && bogus.se
 check('Unbekannte activePlanId wird korrigiert', bogus.plans.some((p) => p.id === bogus.activePlanId),
   `ist ${bogus.activePlanId}`)
 
+console.log('\n=== Wer gewinnt beim Update: Seed oder gespeicherter Plan? ===')
+
+// Fall 1: Plan ohne Markierung (Stand vor dem Flag). Muss erhalten bleiben,
+// weil eine damalige Bearbeitung keine Spur hinterlassen hat.
+const legacy = normalize({
+  ...v1,
+  plans: [{ ...v1.plans[0], name: 'Von Hand umgebaut' }, v1.plans[1]],
+})
+check('Alter Stand ohne Markierung bleibt unangetastet',
+  legacy.plans.find((p) => p.id === 'phase-1')?.name === 'Von Hand umgebaut')
+
+// Fall 2: ausdruecklich bearbeitet. Darf nie ueberschrieben werden.
+const edited = normalize({
+  ...v1,
+  plans: [{ ...v1.plans[0], name: 'Mein Umbau', userEdited: true }, v1.plans[1]],
+})
+check('Bearbeiteter Plan wird nicht ueberschrieben',
+  edited.plans.find((p) => p.id === 'phase-1')?.name === 'Mein Umbau')
+
+// Fall 3: ausdruecklich unbearbeitet. Hier soll die Korrektur ankommen.
+const untouched = normalize({
+  ...v1,
+  plans: [
+    { ...v1.plans[0], name: 'Veralteter Seed-Name', userEdited: false },
+    { ...v1.plans[1], userEdited: false },
+  ],
+})
+const refreshed = untouched.plans.find((p) => p.id === 'phase-1')
+check('Unbearbeiteter Plan wird aus dem Seed aktualisiert',
+  refreshed?.name === seedPlans[0].name, `ist ${refreshed?.name}`)
+check('Aktualisierter Plan hat die vollen Bloecke', (refreshed?.blocks.length ?? 0) > 1)
+check('Geloggtes Training bleibt trotz Plan-Aktualisierung erhalten', untouched.sessions.length === 1)
+
+// Fall 4: Yin Yoga muss abhakbar sein, nicht in Minuten.
+const yoga = normalize({}).plans.find((p) => p.id === 'yoga')
+const yogaEx = yoga?.blocks[0]?.exercises[0]
+check('Yin Yoga wird nur abgehakt', yogaEx?.metric === 'check', `ist ${yogaEx?.metric}`)
+
 console.log('\n=== Zweimal migrieren aendert nichts mehr (idempotent) ===')
 const once = normalize(v1)
 const twice = normalize(structuredClone(once))
