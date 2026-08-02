@@ -1,6 +1,18 @@
 /** Colour keys for training blocks — mirrors the colour bar in Phase1_Trainingsplan_v3.pdf. */
 export type BlockColor = 'gray' | 'red' | 'blue' | 'purple' | 'green' | 'amber' | 'slate'
 
+/** The six activities in Sport_und_Ernaehrungsplan_DE_v2.pdf, Teil 1. */
+export type Sport = 'calisthenics' | 'bouldern' | 'schwimmen' | 'laufen' | 'sauna' | 'yoga'
+
+/**
+ * What a single logged value means.
+ *
+ * Left optional on purpose: the two calisthenics plans predate it and derive
+ * their unit from `hold`. Use `setMetric()` in lib/util rather than reading
+ * this field directly, so both shapes stay supported.
+ */
+export type SetMetric = 'reps' | 'seconds' | 'meters' | 'minutes'
+
 export interface Exercise {
   id: string
   name: string
@@ -17,6 +29,8 @@ export interface Exercise {
   optional: boolean
   /** Whether a set is a hold (seconds) rather than reps — drives the timer. */
   hold: boolean
+  /** Overrides the unit derived from `hold`. Needed for metres and minutes. */
+  metric?: SetMetric
 }
 
 export interface Block {
@@ -42,9 +56,11 @@ export interface Plan {
   weekdays: number[]
   blocks: Block[]
   notes: PlanNote[]
+  /** Optional so v1 payloads load; the store fills it in on migration. */
+  sport?: Sport
 }
 
-/** One logged set. `value` is reps or seconds, depending on Exercise.hold. */
+/** One logged set. `value` is reps, seconds, metres or minutes — see `setMetric()`. */
 export interface LoggedSet {
   done: boolean
   value: string
@@ -52,6 +68,46 @@ export interface LoggedSet {
 
 export interface SessionEntry {
   sets: LoggedSet[]
+  note: string
+}
+
+/**
+ * Whole-session numbers that don't fit the set model.
+ *
+ * Every field is nullable rather than optional, so the workout form can bind
+ * to them without guarding each one. Which fields are shown is decided per
+ * sport in `SPORT_METRICS`.
+ */
+export interface SessionMetrics {
+  /** Metres. Running is entered in km and converted, so one field covers both. */
+  distanceM: number | null
+  durationMin: number | null
+  /** Schwimmen: number of laps. */
+  laps: number | null
+  /** Laufen: average heart rate, read off the watch. */
+  avgHr: number | null
+  /** Sauna: litres drunk — the PDF budgets 0.5–1 L per round. */
+  waterL: number | null
+  /** Schwimmen: main stroke of the session. */
+  stroke: string
+  /** Perceived effort, 1–10. */
+  rpe: number | null
+}
+
+/** One boulder problem. `level` is the gym's own 1–8 scale, 1 = easiest. */
+export interface BoulderSend {
+  id: string
+  level: number
+  attempts: number
+  /**
+   * Sent on the first attempt. Derived from `sent && attempts === 1` whenever
+   * either changes, never toggled directly — a "flash" with three attempts
+   * would be a contradiction the UI shouldn't be able to produce. Stored rather
+   * than recomputed so history queries stay simple.
+   */
+  flash: boolean
+  /** Topped out, as opposed to attempted and given up. */
+  sent: boolean
   note: string
 }
 
@@ -66,6 +122,11 @@ export interface Session {
   /** keyed by Exercise.id */
   entries: Record<string, SessionEntry>
   note: string
+  /** Optional so v1 payloads load; the store fills it in on migration. */
+  sport?: Sport
+  metrics?: SessionMetrics
+  /** Bouldern only. */
+  sends?: BoulderSend[]
 }
 
 export type RecipeTag =

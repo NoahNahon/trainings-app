@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadDraft, newSession, saveDraft, useStore } from '../store'
-import type { Exercise, LoggedSet, Session } from '../types'
+import { emptyMetrics, loadDraft, newSession, saveDraft, useStore } from '../store'
+import type { BoulderSend, Exercise, LoggedSet, Session, SessionMetrics } from '../types'
 import { Button, Chip, Empty, Icon, blockStyles } from '../components/ui'
 import { TimerBar, useCountdown } from '../components/Timer'
-import { clsx, formatDate, holdSeconds, targetMidpoint } from '../lib/util'
+import { BOULDER_LEVELS, METRIC_SPECS, RUN_DISTANCE_SPEC, STROKES, sportMeta, type MetricKey } from '../data/sports'
+import {
+  clsx,
+  formatDate,
+  holdSeconds,
+  metricUnit,
+  metricUsesTimer,
+  pacePerKm,
+  parseDecimal,
+  setMetric,
+  targetMidpoint,
+  uid,
+} from '../lib/util'
 
 /**
  * Logged sets for an exercise, padded to the plan's current set count and
@@ -12,7 +24,12 @@ import { clsx, formatDate, holdSeconds, targetMidpoint } from '../lib/util'
 function setsOf(session: Session | null, exercise: Exercise): LoggedSet[] {
   const existing = session?.entries[exercise.id]?.sets
   if (existing && existing.length === exercise.sets) return existing
-  const prefill = exercise.hold ? String(holdSeconds(exercise.target) ?? '') : targetMidpoint(exercise.target)
+  // Seconds take the upper bound of the target; everything else its midpoint —
+  // "25 m" and "30–40 Min." both prefill sensibly that way.
+  const prefill =
+    setMetric(exercise) === 'seconds'
+      ? String(holdSeconds(exercise.target) ?? '')
+      : targetMidpoint(exercise.target)
   return Array.from({ length: exercise.sets }, (_, i) => existing?.[i] ?? { done: false, value: prefill })
 }
 
@@ -69,6 +86,21 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
   const totalSets = trackable.filter(({ e }) => !e.optional).reduce((sum, { e }) => sum + e.sets, 0)
   const pct = totalSets === 0 ? 0 : Math.min(100, Math.round((doneSets / totalSets) * 100))
 
+  const sport = plan.sport ?? 'calisthenics'
+  const meta = sportMeta(sport)
+  const metrics = session.metrics ?? emptyMetrics()
+  const sends = session.sends ?? []
+
+  function patchMetrics(patch: Partial<SessionMetrics>) {
+    setSession((prev) =>
+      prev ? { ...prev, metrics: { ...(prev.metrics ?? emptyMetrics()), ...patch } } : prev,
+    )
+  }
+
+  function patchSends(fn: (list: BoulderSend[]) => BoulderSend[]) {
+    setSession((prev) => (prev ? { ...prev, sends: fn(prev.sends ?? []) } : prev))
+  }
+
   function entryFor(exercise: Exercise): LoggedSet[] {
     return setsOf(session, exercise)
   }
@@ -118,13 +150,24 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
             <h1 className="text-xl font-bold text-slate-50">{plan.name}</h1>
             <p className="text-xs text-slate-500">{formatDate(session.date)} · läuft</p>
           </div>
-          <Chip className="bg-orange-500/15 text-orange-300">
-            {doneSets} / {totalSets} Sätze
-          </Chip>
+          {/* Sätze sind für Bouldern die falsche Einheit — dort zählen Boulder. */}
+          {sport === 'bouldern' ? (
+            <Chip className="bg-orange-500/15 text-orange-300">
+              {sends.filter((s) => s.sent).length} / {sends.length} Boulder
+            </Chip>
+          ) : (
+            totalSets > 0 && (
+              <Chip className="bg-orange-500/15 text-orange-300">
+                {doneSets} / {totalSets} Sätze
+              </Chip>
+            )
+          )}
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
-          <div className="h-full rounded-full bg-orange-500 transition-[width]" style={{ width: `${pct}%` }} />
-        </div>
+        {totalSets > 0 && (
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+            <div className="h-full rounded-full bg-orange-500 transition-[width]" style={{ width: `${pct}%` }} />
+          </div>
+        )}
       </header>
 
       <div className="space-y-4">
@@ -184,6 +227,12 @@ export function WorkoutPage({ onFinished }: { onFinished: () => void }) {
         })}
       </div>
 
+      {meta.sends && <SendsCard sends={sends} onChange={patchSends} />}
+
+      {meta.metrics.length > 0 && (
+        <MetricsCard sport={sport} keys={meta.metrics} metrics={metrics} onChange={patchMetrics} />
+      )}
+
       <div className="card space-y-2 p-4">
         <label className="block text-[11px] font-medium tracking-wide text-slate-400 uppercase">
           Notiz zur Session
@@ -234,6 +283,8 @@ function ExerciseLogger({
   const [showNote, setShowNote] = useState(note.length > 0)
   const style = blockStyles[color]
   const allDone = sets.length > 0 && sets.every((s) => s.done)
+  const metric = setMetric(exercise)
+  const unit = metricUnit(metric)
 
   return (
     <div className={clsx('px-4 py-3', exercise.optional && 'bg-slate-950/30')}>
@@ -268,15 +319,15 @@ function ExerciseLogger({
                 type="number"
                 inputMode="numeric"
                 className="field pr-16 tabular-nums"
-                placeholder={exercise.hold ? 'Sek.' : 'Wdh.'}
+                placeholder={unit}
                 value={set.value}
                 onChange={(e) => onValue(i, e.target.value)}
               />
               <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-500">
-                {exercise.hold ? 'Sek.' : 'Wdh.'}
+                {unit}
               </span>
             </div>
-            {exercise.hold && (
+            {metricUsesTimer(metric) && (
               <Button size="sm" variant="secondary" aria-label="Halte-Timer starten" onClick={onHold}>
                 <Icon name="timer" className="h-4 w-4" />
               </Button>
@@ -318,6 +369,244 @@ function ExerciseLogger({
       )}
 
       {exercise.note && <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{exercise.note}</p>}
+    </div>
+  )
+}
+
+/**
+ * A number field that keeps its own text while you type.
+ *
+ * Necessary because "7," is not a number yet: binding the input straight to the
+ * parsed value would delete the comma the moment it's typed. The effect only
+ * resyncs when the outside value stops matching what the text parses to, which
+ * happens on draft restore but not during editing.
+ */
+function MetricInput({
+  value,
+  unit,
+  decimal,
+  placeholder,
+  onChange,
+}: {
+  value: number | null
+  unit: string
+  decimal: boolean
+  placeholder?: string
+  onChange: (value: number | null) => void
+}) {
+  const asText = (v: number | null) => (v == null ? '' : String(v).replace('.', ','))
+  const [text, setText] = useState(() => asText(value))
+
+  useEffect(() => {
+    if (parseDecimal(text) !== value) setText(asText(value))
+    // Intentionally keyed on `value` only — depending on `text` would fight the typist.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        inputMode={decimal ? 'decimal' : 'numeric'}
+        className={clsx('field tabular-nums', unit && 'pr-14')}
+        placeholder={placeholder}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value)
+          onChange(parseDecimal(e.target.value))
+        }}
+      />
+      {unit && (
+        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-500">
+          {unit}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function MetricsCard({
+  sport,
+  keys,
+  metrics,
+  onChange,
+}: {
+  sport: string
+  keys: MetricKey[]
+  metrics: SessionMetrics
+  onChange: (patch: Partial<SessionMetrics>) => void
+}) {
+  const pace = sport === 'laufen' ? pacePerKm(metrics.distanceM, metrics.durationMin) : null
+
+  return (
+    <div className="card space-y-3 p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Ergebnis der Einheit</h2>
+        {pace && <span className="text-xs font-semibold tabular-nums text-emerald-400">{pace}</span>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {keys.map((key) => {
+          // Running is the one sport entered in kilometres; everything else in metres.
+          const isRunKm = key === 'distanceM' && sport === 'laufen'
+          const spec = isRunKm ? RUN_DISTANCE_SPEC : METRIC_SPECS[key]
+
+          if (key === 'stroke') {
+            return (
+              <label key={key} className="col-span-2 block">
+                <span className="mb-1 block text-[11px] text-slate-400">{spec.label}</span>
+                <select
+                  className="field"
+                  value={metrics.stroke}
+                  onChange={(e) => onChange({ stroke: e.target.value })}
+                >
+                  <option value="">— nicht angegeben —</option>
+                  {STROKES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )
+          }
+
+          const raw = metrics[key]
+          const value = typeof raw === 'number' ? (isRunKm ? raw / 1000 : raw) : null
+
+          return (
+            <label key={key} className="block">
+              <span className="mb-1 block text-[11px] text-slate-400">{spec.label}</span>
+              <MetricInput
+                value={value}
+                unit={spec.unit}
+                decimal={spec.kind === 'decimal'}
+                onChange={(n) => onChange({ [key]: isRunKm && n != null ? Math.round(n * 1000) : n })}
+              />
+              {spec.hint && <span className="mt-1 block text-[10px] leading-snug text-slate-500">{spec.hint}</span>}
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Boulder log. Tapping a level adds a problem straight away, because in the gym
+ * you want one tap per boulder, not a form. Corrections happen in the list below.
+ */
+function SendsCard({
+  sends,
+  onChange,
+}: {
+  sends: BoulderSend[]
+  onChange: (fn: (list: BoulderSend[]) => BoulderSend[]) => void
+}) {
+  function add(level: number) {
+    onChange((list) => [
+      ...list,
+      { id: uid('send'), level, attempts: 1, flash: true, sent: true, note: '' },
+    ])
+  }
+
+  /** Flash is derived, never toggled by hand — it can only mean "sent first try". */
+  function patch(id: string, next: Partial<BoulderSend>) {
+    onChange((list) =>
+      list.map((s) => {
+        if (s.id !== id) return s
+        const merged = { ...s, ...next }
+        return { ...merged, flash: merged.sent && merged.attempts === 1 }
+      }),
+    )
+  }
+
+  const sent = sends.filter((s) => s.sent)
+  const hardest = sent.length > 0 ? Math.max(...sent.map((s) => s.level)) : null
+
+  return (
+    <div className="card space-y-3 p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        {/* Nicht nur "Boulder": der Plan hat schon einen Block mit dem Namen. */}
+        <h2 className="text-[11px] font-medium tracking-wide text-slate-400 uppercase">Boulder-Protokoll</h2>
+        {hardest !== null && (
+          <span className="text-xs text-slate-400">
+            Schwerster geschafft: <span className="font-semibold text-purple-300">Level {hardest}</span>
+          </span>
+        )}
+      </div>
+
+      <div>
+        <span className="mb-1.5 block text-[11px] text-slate-400">Level antippen zum Hinzufügen</span>
+        <div className="grid grid-cols-8 gap-1.5">
+          {BOULDER_LEVELS.map((level) => (
+            <button
+              key={level}
+              type="button"
+              onClick={() => add(level)}
+              className="h-10 rounded-lg border border-slate-700 bg-slate-900 text-sm font-semibold text-slate-200 transition-colors hover:border-purple-500 hover:text-purple-300 active:bg-purple-500/20"
+            >
+              {level}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {sends.length === 0 ? (
+        <p className="text-xs text-slate-500">Noch kein Boulder eingetragen. 1 = leicht, 8 = schwer.</p>
+      ) : (
+        <ul className="divide-y divide-slate-800">
+          {sends.map((send) => (
+            <li key={send.id} className="flex items-center gap-2 py-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-purple-500/15 text-sm font-bold text-purple-300">
+                {send.level}
+              </span>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label="Ein Versuch weniger"
+                  onClick={() => patch(send.id, { attempts: Math.max(1, send.attempts - 1) })}
+                >
+                  −
+                </Button>
+                <span className="w-10 text-center text-xs tabular-nums text-slate-300">{send.attempts}×</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label="Ein Versuch mehr"
+                  onClick={() => patch(send.id, { attempts: send.attempts + 1 })}
+                >
+                  +
+                </Button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => patch(send.id, { sent: !send.sent })}
+                className={clsx(
+                  'ml-auto shrink-0 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors',
+                  send.sent
+                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+                    : 'border-slate-700 text-slate-500',
+                )}
+              >
+                {send.sent ? (send.flash ? 'Flash' : 'Top') : 'Versucht'}
+              </button>
+
+              <button
+                type="button"
+                aria-label="Boulder entfernen"
+                onClick={() => onChange((list) => list.filter((s) => s.id !== send.id))}
+                className="shrink-0 rounded-lg p-1.5 text-slate-600 transition-colors hover:text-red-400"
+              >
+                <Icon name="trash" className="h-4 w-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

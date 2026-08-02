@@ -9,37 +9,19 @@ import {
   type ReactNode,
 } from 'react'
 import type { AppData, Block, Exercise, Plan, Recipe, Session } from './types'
-import { seedPlans } from './data/plans'
-import { seedRecipes } from './data/recipes'
+import { emptyMetrics, normalize, seedData } from './lib/migrate'
 import { todayKey, uid } from './lib/util'
 
-const STORAGE_KEY = 'trainings-app:v1'
-const DATA_VERSION = 1
+export { emptyMetrics }
 
-function seedData(): AppData {
-  return {
-    version: DATA_VERSION,
-    plans: structuredClone(seedPlans),
-    activePlanId: seedPlans[0].id,
-    sessions: [],
-    recipes: structuredClone(seedRecipes),
-  }
-}
+const STORAGE_KEY = 'trainings-app:v1'
 
 function load(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return seedData()
-    const parsed = JSON.parse(raw) as Partial<AppData>
-    const fresh = seedData()
-    // Shallow repair: a half-written or older payload shouldn't wipe the app.
-    return {
-      version: DATA_VERSION,
-      plans: Array.isArray(parsed.plans) && parsed.plans.length > 0 ? parsed.plans : fresh.plans,
-      activePlanId: parsed.activePlanId ?? fresh.activePlanId,
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      recipes: Array.isArray(parsed.recipes) && parsed.recipes.length > 0 ? parsed.recipes : fresh.recipes,
-    }
+    // A half-written or older payload shouldn't wipe the app.
+    return normalize(JSON.parse(raw) as Partial<AppData>)
   } catch {
     return seedData()
   }
@@ -279,13 +261,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!Array.isArray(parsed.plans) || parsed.plans.length === 0) {
       throw new Error('Datei enthält keine Trainingspläne.')
     }
-    setData({
-      version: DATA_VERSION,
-      plans: parsed.plans,
-      activePlanId: parsed.activePlanId ?? parsed.plans[0].id,
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      recipes: Array.isArray(parsed.recipes) ? parsed.recipes : [],
-    })
+    // Same path as load(), so an export from an older version imports cleanly.
+    setData(normalize(parsed))
   }, [])
 
   const resetAll = useCallback(() => setData(seedData()), [])
@@ -351,9 +328,12 @@ export function newSession(plan: Plan): Session {
     id: uid('session'),
     planId: plan.id,
     planName: plan.name,
+    sport: plan.sport ?? 'calisthenics',
     date: todayKey(),
     startedAt: new Date().toISOString(),
     entries: {},
     note: '',
+    metrics: emptyMetrics(),
+    sends: [],
   }
 }

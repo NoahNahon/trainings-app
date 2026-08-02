@@ -1,15 +1,140 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../store'
-import type { Block, Exercise, Plan } from '../types'
+import type { Block, Exercise, Plan, Sport } from '../types'
 import { Button, Chip, Field, Icon, SectionTitle, blockStyles, colorOptions } from '../components/ui'
-import { clsx, daysUntilNext, plural, weekdayName } from '../lib/util'
+import { SPORTS, sportMeta } from '../data/sports'
+import { clsx, daysUntilNext, formatShortDate, plural, weekdayName } from '../lib/util'
 
+/**
+ * Plan tab: pick a sport first, then its plan.
+ *
+ * The picker is a gate rather than a row of tabs because six sports don't fit
+ * across a phone, and because the week only ever has one or two of them on any
+ * given day — so the useful default view is "what's today", not "everything".
+ */
 export function PlanPage({ onStartWorkout }: { onStartWorkout: () => void }) {
+  const [sport, setSport] = useState<Sport | null>(null)
+
+  if (!sport) return <SportPicker onPick={setSport} />
+  return <PlanDetail sport={sport} onBack={() => setSport(null)} onStartWorkout={onStartWorkout} />
+}
+
+function SportPicker({ onPick }: { onPick: (sport: Sport) => void }) {
+  const { data, setActivePlan } = useStore()
+  const today = new Date().getDay()
+
+  /** Newest session per sport — sessions are already sorted newest first. */
+  const lastBySport = useMemo(() => {
+    const map = new Map<Sport, string>()
+    for (const s of data.sessions) {
+      const key = s.sport ?? 'calisthenics'
+      if (!map.has(key)) map.set(key, s.date)
+    }
+    return map
+  }, [data.sessions])
+
+  function pick(sport: Sport) {
+    // Point the Training tab at this sport before navigating into it.
+    const first = data.plans.find((p) => (p.sport ?? 'calisthenics') === sport)
+    if (first) setActivePlan(first.id)
+    onPick(sport)
+  }
+
+  const todaysSports = SPORTS.filter((s) => s.weekdays.includes(today))
+
+  return (
+    <div className="space-y-5">
+      <header>
+        <h1 className="text-2xl leading-tight font-bold text-slate-50">Sportart wählen</h1>
+        <p className="mt-1 text-sm text-slate-400">
+          {todaysSports.length > 0
+            ? `Heute ist ${weekdayName(today)}: ${todaysSports.map((s) => s.name).join(' + ')}`
+            : `Heute ist ${weekdayName(today)} – kein Training im Plan`}
+        </p>
+      </header>
+
+      <div className="grid gap-3">
+        {SPORTS.map((meta) => {
+          const isToday = meta.weekdays.includes(today)
+          const plans = data.plans.filter((p) => (p.sport ?? 'calisthenics') === meta.id)
+          const last = lastBySport.get(meta.id)
+          const style = blockStyles[meta.color]
+
+          return (
+            <button
+              key={meta.id}
+              type="button"
+              onClick={() => pick(meta.id)}
+              className={clsx(
+                'flex items-stretch gap-3 overflow-hidden rounded-2xl border text-left transition-colors',
+                isToday
+                  ? 'border-orange-500/50 bg-orange-500/5'
+                  : 'border-slate-800 bg-slate-900/60 hover:border-slate-700',
+              )}
+            >
+              <span className={clsx('w-1.5 shrink-0', style.bar)} aria-hidden="true" />
+              <span className="min-w-0 flex-1 py-3 pr-3">
+                <span className="flex items-center gap-2">
+                  <span className="truncate font-semibold text-slate-100">{meta.name}</span>
+                  {isToday && (
+                    <span className="shrink-0 rounded-full bg-orange-500/20 px-2 py-0.5 text-[11px] font-medium text-orange-300">
+                      heute
+                    </span>
+                  )}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-slate-400">{meta.role}</span>
+                <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                  <span>{meta.weekdays.map((d) => weekdayName(d).slice(0, 2)).join(' · ')}</span>
+                  <span aria-hidden="true">•</span>
+                  <span>{plural(plans.length, 'Plan', 'Pläne')}</span>
+                  <span aria-hidden="true">•</span>
+                  <span>{last ? `zuletzt ${formatShortDate(last)}` : 'noch nichts geloggt'}</span>
+                </span>
+              </span>
+              <span className="flex items-center pr-3 text-slate-600">
+                <Icon name="down" className="h-4 w-4 -rotate-90" />
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <p className="text-xs leading-relaxed text-slate-500">
+        Die Wochenstruktur stammt aus deinem Sport- und Ernährungsplan: Mi und Sa sind die Haupttage, Mo und Fr
+        aktive Erholung, Di / Do / So Regeneration.
+      </p>
+    </div>
+  )
+}
+
+function PlanDetail({
+  sport,
+  onBack,
+  onStartWorkout,
+}: {
+  sport: Sport
+  onBack: () => void
+  onStartWorkout: () => void
+}) {
   const { data, plan, setActivePlan } = useStore()
   const [editing, setEditing] = useState(false)
   const [showOptional, setShowOptional] = useState(true)
+  const meta = sportMeta(sport)
 
-  const inDays = daysUntilNext(plan.weekdays)
+  const sportPlans = data.plans.filter((p) => (p.sport ?? 'calisthenics') === sport)
+  // Guard against the active plan belonging to another sport (e.g. after an import).
+  const shown = sportPlans.some((p) => p.id === plan.id) ? plan : sportPlans[0]
+
+  if (!shown) {
+    return (
+      <div className="space-y-4">
+        <BackBar label={meta.name} onBack={onBack} />
+        <p className="text-sm text-slate-400">Für diese Sportart ist kein Plan vorhanden.</p>
+      </div>
+    )
+  }
+
+  const inDays = daysUntilNext(shown.weekdays)
   const nextLabel =
     inDays === null
       ? null
@@ -19,22 +144,36 @@ export function PlanPage({ onStartWorkout }: { onStartWorkout: () => void }) {
           ? 'Morgen ist Trainingstag'
           : `Nächster Trainingstag in ${inDays} Tagen`
 
-  const coreExercises = plan.blocks.flatMap((b) => b.exercises).filter((e) => !e.optional && e.sets > 0)
+  const coreExercises = shown.blocks.flatMap((b) => b.exercises).filter((e) => !e.optional && e.sets > 0)
   const totalSets = coreExercises.reduce((sum, e) => sum + e.sets, 0)
+
+  // "Sätze" only means something where you actually count sets. The sauna plan
+  // has nine steps, and a Zone-2 run is one continuous effort — calling either
+  // of those "Sätze im Kern" would be noise.
+  const volumeLabel =
+    totalSets === 0
+      ? null
+      : sport === 'sauna'
+        ? plural(totalSets, 'Schritt', 'Schritte')
+        : sport === 'laufen' || sport === 'yoga'
+          ? null
+          : `${plural(totalSets, 'Satz', 'Sätze')} im Kern`
 
   return (
     <div className="space-y-5">
+      <BackBar label={meta.name} onBack={onBack} />
+
       <header className="space-y-3">
-        {data.plans.length > 1 && (
+        {sportPlans.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {data.plans.map((p) => (
+            {sportPlans.map((p) => (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => setActivePlan(p.id)}
                 className={clsx(
                   'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                  p.id === plan.id
+                  p.id === shown.id
                     ? 'border-orange-500 bg-orange-500/15 text-orange-300'
                     : 'border-slate-700 text-slate-400 hover:text-slate-200',
                 )}
@@ -46,15 +185,15 @@ export function PlanPage({ onStartWorkout }: { onStartWorkout: () => void }) {
         )}
 
         <div>
-          <h1 className="text-2xl leading-tight font-bold text-slate-50">{plan.name}</h1>
-          <p className="mt-1 text-sm text-slate-400">{plan.subtitle}</p>
+          <h1 className="text-2xl leading-tight font-bold text-slate-50">{shown.name}</h1>
+          <p className="mt-1 text-sm text-slate-400">{shown.subtitle}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Chip className="bg-slate-800 text-slate-300">
-            {plan.weekdays.map(weekdayName).join(' & ') || 'Keine Tage gesetzt'}
+            {shown.weekdays.map(weekdayName).join(' & ') || 'Keine Tage gesetzt'}
           </Chip>
-          <Chip className="bg-slate-800 text-slate-300">{plural(totalSets, 'Satz', 'Sätze')} im Kern</Chip>
+          {volumeLabel && <Chip className="bg-slate-800 text-slate-300">{volumeLabel}</Chip>}
           {nextLabel && (
             <Chip className={inDays === 0 ? 'bg-orange-500/15 text-orange-300' : 'bg-slate-800 text-slate-400'}>
               {nextLabel}
@@ -86,28 +225,43 @@ export function PlanPage({ onStartWorkout }: { onStartWorkout: () => void }) {
         )}
       </header>
 
-      {editing && <PlanMetaEditor plan={plan} />}
+      {editing && <PlanMetaEditor plan={shown} />}
 
       <div className="space-y-4">
-        {plan.blocks.map((block, i) => (
+        {shown.blocks.map((block, i) => (
           <BlockCard
             key={block.id}
-            plan={plan}
+            plan={shown}
             block={block}
             editing={editing}
             showOptional={showOptional}
             isFirst={i === 0}
-            isLast={i === plan.blocks.length - 1}
+            isLast={i === shown.blocks.length - 1}
           />
         ))}
       </div>
 
       {editing && (
-        <BlockAdder planId={plan.id} />
+        <BlockAdder planId={shown.id} />
       )}
 
-      <NotesSection plan={plan} editing={editing} />
+      <NotesSection plan={shown} editing={editing} />
     </div>
+  )
+}
+
+function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="-ml-1 flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm text-slate-400 transition-colors hover:text-slate-200"
+    >
+      <Icon name="down" className="h-4 w-4 rotate-90" />
+      Alle Sportarten
+      <span className="text-slate-600">·</span>
+      <span className="text-slate-300">{label}</span>
+    </button>
   )
 }
 

@@ -15,7 +15,9 @@
     "serve:subpath": "node scripts/subpath-server.mjs",
     "icons": "node scripts/make-icons.mjs",
     "verify:seed": "node --experimental-strip-types scripts/verify-seed.mjs",
-    "parse:pdf": "node --experimental-strip-types scripts/test-parser.mjs"
+    "test:migration": "node --experimental-strip-types scripts/test-migration.mjs",
+    "parse:pdf": "node --experimental-strip-types scripts/test-parser.mjs",
+    "dump:pdf": "node scripts/dump-pdf.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "^6.2.108",

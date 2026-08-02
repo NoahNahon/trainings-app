@@ -22,18 +22,29 @@ npm run preview   # dist/ ausliefern
 
 ## Funktionen
 
-**Plan** – Blöcke (Warm-up, Push, Pull, Grip, Beine, Core, Cool-down) mit Sätzen,
-Wiederholungen, Pausen, Hinweisen und Tutorial-Links. Im Bearbeiten-Modus lassen sich
-Übungen ändern, hinzufügen, löschen und verschieben, Blöcke umbenennen und umfärben,
-Trainingstage setzen. Zwei Pläne sind hinterlegt: Phase 1 (aktiv) und Phase 2.
+**Plan** – zuerst die Sportart wählen, dann den Plan. Sechs Sportarten entsprechend der
+Wochenstruktur: Calisthenics und Bouldern (Mi/Sa, Haupttage), Schwimmen (Mo/Fr),
+Zone 2 Laufen (So), Sauna (Di/Do/So) und Yin Yoga (Do). Was heute ansteht, ist
+hervorgehoben. Der Plan selbst besteht aus Blöcken mit Sätzen, Zielwerten, Pausen,
+Hinweisen und Tutorial-Links; im Bearbeiten-Modus lassen sich Übungen ändern,
+hinzufügen, löschen und verschieben, Blöcke umbenennen und umfärben, Trainingstage
+setzen. Für Calisthenics sind zwei Pläne hinterlegt (Phase 1 aktiv, Phase 2).
 
-**Training** – Session starten, Sätze abhaken, tatsächliche Wiederholungen eintragen
-(mit dem Zielwert vorbelegt). Beim Abhaken startet automatisch der Pausen-Timer;
-Halte-Übungen haben einen eigenen Timer-Knopf. Eine laufende Session übersteht ein
-Neuladen der Seite.
+**Training** – Session starten und die Ergebnisse in der Einheit eintragen, die zur
+Sportart passt: Wiederholungen und Haltezeiten (Calisthenics), Meter (Schwimmen),
+Minuten (Laufen, Sauna, Yoga). Sätze sind mit dem Zielwert vorbelegt, beim Abhaken
+startet der Pausen-Timer, Halte-Übungen haben einen eigenen Timer-Knopf.
 
-**Verlauf** – abgeschlossene Sessions mit Detailansicht sowie Fortschritt pro Übung
-(Gesamtwiederholungen, bester Satz, Verlaufslinie).
+Dazu Ganzsession-Werte je Sportart: Distanz, Dauer, Ø-Puls und daraus berechneter Pace
+beim Laufen; Bahnen, Meter und Hauptstil beim Schwimmen; getrunkene Menge bei der Sauna.
+Beim Bouldern wird jeder Boulder einzeln erfasst — Level 1–8 antippen genügt, Versuche
+und „geschafft" lassen sich danach korrigieren. Flash ergibt sich daraus automatisch.
+Eine laufende Session übersteht ein Neuladen der Seite.
+
+**Verlauf** – abgeschlossene Sessions, filterbar nach Sportart, mit Detailansicht. Der
+Fortschritt zeigt pro Sportart die Kennzahl, die tatsächlich etwas aussagt (Pace und
+Distanz beim Laufen, schwerster geschaffter Boulder, Meter beim Schwimmen) und zusätzlich
+den Verlauf pro Übung.
 
 **Rezepte** – 16 Gerichte mit Suche über Name und Zutaten, Filter nach Tagestyp,
 Sortierung nach Name/Protein/Zeit, Favoriten und abhakbaren Zutaten.
